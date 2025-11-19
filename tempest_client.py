@@ -101,6 +101,36 @@ class AuthNetCheckoutAutomation:
                 except:
                     continue
             
+            # FIRST NAME (campo obbligatorio)
+            try:
+                first_name_selectors = ["input[name='first_name']", "input[name='fname']"]
+                for selector in first_name_selectors:
+                    try:
+                        field = self.driver.find_element(By.CSS_SELECTOR, selector)
+                        field.clear()
+                        field.send_keys("Test")
+                        print("✅ First name compilato")
+                        break
+                    except:
+                        continue
+            except:
+                print("⚠️ First name non trovato")
+            
+            # LAST NAME (campo obbligatorio)
+            try:
+                last_name_selectors = ["input[name='last_name']", "input[name='lname']"]
+                for selector in last_name_selectors:
+                    try:
+                        field = self.driver.find_element(By.CSS_SELECTOR, selector)
+                        field.clear()
+                        field.send_keys("User")
+                        print("✅ Last name compilato")
+                        break
+                    except:
+                        continue
+            except:
+                print("⚠️ Last name non trovato")
+            
             # CARD NUMBER
             card_selectors = [
                 "input[name='authorize_net[card_number]']",
@@ -237,7 +267,7 @@ class AuthNetCheckoutAutomation:
             return False
 
     def analyze_result(self):
-        """Analizza risultato AuthNet - VERSIONE CHE VERIFICA LO STATUS CARTA"""
+        """Analizza risultato AuthNet - VERSIONE CORRETTA che evita falsi positivi"""
         print("🔍 Analisi risultato AuthNet...")
         
         try:
@@ -248,119 +278,139 @@ class AuthNetCheckoutAutomation:
             print(f"📄 Final URL: {current_url}")
             print(f"📄 Page title: {page_title}")
             
-            # CERCA MESSAGGI SPECIFICI DI AUTORIZZAZIONE BANCA
-            bank_response_indicators = {
-                'APPROVED': [
-                    'transaction approved',
-                    'authorization code',
-                    'approval code',
-                    'auth code',
-                    'successful payment',
-                    'payment processed'
-                ],
-                'DECLINED': [
-                    'your card was declined',
-                    'card was declined', 
-                    'declined',
-                    'do not honor',
-                    'insufficient funds',
-                    'invalid card number',
-                    'transaction not allowed',
-                    'pick up card',
-                    'restricted card',
-                    'security violation'
-                ],
-                'ERROR': [
-                    'processing error',
-                    'system error',
-                    'temporarily unavailable',
-                    'try again later',
-                    'gateway error'
-                ]
-            }
-            
-            # 1. CERCA PRIMA I MESSAGGI DI RISPOSTA BANCA
-            for status, indicators in bank_response_indicators.items():
-                for indicator in indicators:
-                    if indicator in page_text:
-                        print(f"🔍 {status} - Messaggio banca: {indicator}")
-                        
-                        if status == "APPROVED":
-                            return "APPROVED", f"Card LIVE - {indicator}"
-                        elif status == "DECLINED":
-                            return "DECLINED", f"Card DEAD - {indicator}"
-                        else:
-                            return "ERROR", f"Bank error - {indicator}"
-            
-            # 2. CONTROLLA SE C'È UN MESSAGGIO DI ERRORE DI CONVALIDA CARTA
-            validation_errors = [
-                'invalid card number',
-                'invalid expiration date', 
-                'invalid security code',
-                'check card number',
-                'card number is invalid'
+            # 1. PRIMA CONTROLLA SE C'È UN MESSAGGIO DI SUCCESSO CHIARO
+            success_indicators = [
+                'thank you',
+                'welcome',
+                'success',
+                'registration complete', 
+                'payment successful',
+                'congratulations',
+                'your account has been created',
+                'membership activated'
             ]
             
-            for error in validation_errors:
-                if error in page_text:
-                    print(f"❌ DECLINED - Errore validazione: {error}")
-                    return "DECLINED", f"Card INVALID - {error}"
+            for indicator in success_indicators:
+                if indicator in page_text:
+                    print(f"✅ APPROVED - Messaggio successo: {indicator}")
+                    return "APPROVED", f"Card LIVE - {indicator}"
+        
+            # 2. CONTROLLA URL DI SUCCESSO
+            if any(url in current_url for url in ['my-account', 'dashboard', 'thank-you', 'success']):
+                print("✅ APPROVED - Redirect a pagina successo")
+                return "APPROVED", "Card LIVE - Payment successful"
             
-            # 3. SE SIAMO ANCORA SU REGISTER, ANALIZZA GLI ERRORI NEL FORM
+            # 3. SE SIAMO SU UNA PAGINA DIVERSA DA REGISTER
+            if 'tempestprotraining.com' in current_url and 'register' not in current_url:
+                print("✅ APPROVED - Reindirizzamento a pagina diversa")
+                return "APPROVED", "Card LIVE - Redirect successful"
+            
+            # 4. SE SIAMO ANCORA SU REGISTER, CERCHIAMO SOLO ERRORI SPECIFICI DELLA CARTA
             if 'register' in current_url:
-                print("🔄 Analisi errori in pagina register...")
+                print("🔄 Analisi errori specifici carta...")
                 
-                # Cerca messaggi di errore visibili
+                # CERCA SOLO ERRORI RELATIVI ALLA CARTA (non errori generici del form)
+                card_specific_errors = [
+                    'your card was declined',
+                    'card was declined',
+                    'declined',
+                    'invalid card number',
+                    'invalid card',
+                    'card number is invalid',
+                    'invalid expiration',
+                    'invalid security code',
+                    'cvv is invalid',
+                    'payment failed',
+                    'transaction declined',
+                    'do not honor',
+                    'insufficient funds'
+                ]
+                
+                # Cerca nei messaggi di errore visibili
                 try:
                     error_elements = self.driver.find_elements(By.CSS_SELECTOR, ".error, .field-error, .notice-error, .alert-danger, [class*='error']")
                     for element in error_elements:
                         if element.is_displayed():
                             error_text = element.text.lower()
-                            print(f"🔍 Elemento errore: {error_text}")
+                            print(f"🔍 Trovato elemento errore: {error_text[:100]}...")
                             
-                            # Se c'è un errore relativo alla carta = DECLINED
-                            if any(word in error_text for word in ['card', 'payment', 'declined', 'invalid', 'failed']):
-                                print(f"❌ DECLINED - Errore carta nel form: {error_text[:100]}")
-                                return "DECLINED", f"Card declined - {error_text[:100]}"
-                except:
-                    pass
+                            # CONTROLLA SOLO SE L'ERRORE È RELATIVO ALLA CARTA
+                            if any(card_error in error_text for card_error in card_specific_errors):
+                                print(f"❌ DECLINED - Errore carta specifico: {error_text[:100]}")
+                                return "DECLINED", f"Card DEAD - {error_text[:100]}"
+                            else:
+                                print(f"⚠️ Ignoro errore non relativo a carta: {error_text[:100]}")
+                except Exception as e:
+                    print(f"⚠️ Errore ricerca elementi: {e}")
                 
-                # Controlla se il form è stato ricaricato con errori
+                # Cerca nei messaggi di testo generale della pagina
+                for card_error in card_specific_errors:
+                    if card_error in page_text:
+                        print(f"❌ DECLINED - Messaggio errore carta: {card_error}")
+                        return "DECLINED", f"Card DEAD - {card_error}"
+                
+                # 5. CONTROLLA SE I CAMPI CARTA HANNO ERRORI VISIVI SPECIFICI
                 try:
-                    # Verifica se i campi carta hanno bordi rossi o indicano errore
-                    card_fields = self.driver.find_elements(By.CSS_SELECTOR, "input[name*='card'], input[name*='number'], input[name*='cvc']")
-                    for field in card_fields:
-                        field_class = field.get_attribute('class') or ''
-                        field_style = field.get_attribute('style') or ''
-                        if 'error' in field_class.lower() or 'red' in field_style.lower() or 'border' in field_style.lower():
-                            print("❌ DECLINED - Campo carta con errore visivo")
-                            return "DECLINED", "Card validation failed - form errors"
+                    card_field_selectors = [
+                        "input[name*='card_number']",
+                        "input[name*='number']",
+                        "input[name*='cvc']",
+                        "input[name*='expiry']",
+                        "input[name*='exp_month']",
+                        "input[name*='exp_year']"
+                    ]
+                    
+                    for selector in card_field_selectors:
+                        try:
+                            fields = self.driver.find_elements(By.CSS_SELECTOR, selector)
+                            for field in fields:
+                                # Controlla se il campo carta ha stili di errore
+                                field_class = field.get_attribute('class') or ''
+                                field_style = field.get_attribute('style') or ''
+                                parent = field.find_element(By.XPATH, "./..")
+                                parent_class = parent.get_attribute('class') or ''
+                                
+                                has_error = (
+                                    'error' in field_class.lower() or 
+                                    'error' in parent_class.lower() or
+                                    'invalid' in field_class.lower() or
+                                    'invalid' in parent_class.lower() or
+                                    'red' in field_style.lower() or
+                                    'border' in field_style.lower() and 'red' in field_style.lower()
+                                )
+                                
+                                if has_error and field.is_displayed():
+                                    print(f"❌ DECLINED - Campo carta con errore visivo: {selector}")
+                                    return "DECLINED", "Card validation failed - field errors"
+                        except:
+                            continue
+                except Exception as e:
+                    print(f"⚠️ Errore controllo campi carta: {e}")
+                
+                # 6. SE SIAMO ANCORA QUI E ANCORA SU REGISTER, VERIFICA SE IL FORM È STATO INVIATO
+                # Controlla se ci sono campi obbligatori vuoti (first name, last name)
+                try:
+                    required_fields = self.driver.find_elements(By.CSS_SELECTOR, "input[required]")
+                    empty_required = []
+                    for field in required_fields:
+                        if field.get_attribute('value') in ['', None]:
+                            field_name = field.get_attribute('name') or field.get_attribute('id') or 'unknown'
+                            empty_required.append(field_name)
+                    
+                    if empty_required and len(empty_required) > 2:  # Se più di 2 campi obbligatori sono vuoti
+                        print(f"⚠️ Campi obbligatori vuoti: {empty_required}")
+                        print("🔄 Probabile problema di compilazione form, non errore carta")
+                        return "ERROR", f"Form incomplete - missing fields: {', '.join(empty_required[:3])}"
                 except:
                     pass
                 
-                # Se siamo ancora qui e ancora su register, probabilmente la carta è stata rifiutata
-                # ma senza messaggio chiaro - in questo caso è meglio ERROR che DECLINED
-                print("⚠️ Ancora su register senza errori chiari")
-                return "ERROR", "Payment processing incomplete - check manually"
+                # 7. ULTIMO CONTROLLO: SE NESSUN ERRORE SPECIFICO CARTA, ALLORA È UN PROBLEMA DI COMPILAZIONE
+                print("⚠️ Ancora su register ma nessun errore specifico della carta trovato")
+                return "ERROR", "Payment processing incomplete - no card-specific errors found"
             
-            # 4. CONTROLLA SUCCESSO REALE (non solo redirect)
-            if any(url in current_url for url in ['my-account', 'dashboard', 'thank-you', 'success']):
-                print("✅ APPROVED - Redirect a pagina successo")
-                return "APPROVED", "Card LIVE - Payment successful"
-            
-            # 5. SE SIAMO SU UNA PAGINA DIVERSA
-            if 'tempestprotraining.com' in current_url and 'register' not in current_url:
-                # Controlla che non sia una pagina di errore
-                if any(error in page_text for error in ['error', 'failed', 'try again']):
-                    print("❌ DECLINED - Pagina diversa ma con errori")
-                    return "DECLINED", "Card declined - error on destination page"
-                else:
-                    print("✅ APPROVED - Reindirizzamento completato")
-                    return "APPROVED", "Card LIVE - Redirect successful"
-            
-            # 6. SE NON SIAMO SICURI, MEGLIO ERROR CHE FALSI DECLINED
-            print("⚠️ Risultato incerto - bisogno di analisi manuale")
-            return "ERROR", "Unable to determine card status - check manually"
+            # 8. SE NON SIAMO SICURI, ERROR
+            print("⚠️ Risultato incerto - situazione non prevista")
+            return "ERROR", "Unable to determine card status - unusual situation"
             
         except Exception as e:
             print(f"💥 Errore analisi: {e}")
