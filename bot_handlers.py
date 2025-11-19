@@ -175,12 +175,12 @@ async def gates_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     permission_info = get_chat_permissions(chat_id, chat_type, user_id)
     
     keyboard = [
-        [InlineKeyboardButton("Stripe $1", callback_data="gate_stripe1")],
-        [InlineKeyboardButton("Stripe $5", callback_data="gate_stripe5")],
+        [InlineKeyboardButton("Stripe $1(off)", callback_data="gate_stripe1")],
+        [InlineKeyboardButton("Stripe $5(off)", callback_data="gate_stripe5")],
         [InlineKeyboardButton("Stripe $9", callback_data="gate_stripe9")],
         [InlineKeyboardButton("Shopify $1", callback_data="gate_shopify")],
-        [InlineKeyboardButton("AuthNet $300", callback_data="gate_authnet")],
-        [InlineKeyboardButton("Caliper", callback_data="gate_caliper")],
+        [InlineKeyboardButton("authent $32", callback_data="gate_authnet")],
+        [InlineKeyboardButton("braintree auth (wip)", callback_data="gate_caliper")],
         [InlineKeyboardButton("🔙 Back", callback_data="back_main")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -232,8 +232,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cooldown_status = get_cooldown_status(user_id)
         permission_info = get_chat_permissions(chat_id, chat_type, user_id)
         keyboard = [
-            [InlineKeyboardButton("Stripe $1", callback_data="gate_stripe1")],
-            [InlineKeyboardButton("Stripe $5", callback_data="gate_stripe5")],
+            [InlineKeyboardButton("Stripe $1(off)", callback_data="gate_stripe1")],
+            [InlineKeyboardButton("Stripe $5(off)", callback_data="gate_stripe5")],
             [InlineKeyboardButton("Stripe $9", callback_data="gate_stripe9")],
             [InlineKeyboardButton("Shopify $1", callback_data="gate_shopify")],
             [InlineKeyboardButton("authnet $32", callback_data="gate_authnet")],
@@ -640,3 +640,4 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.error(f"Error: {context.error}")
+
