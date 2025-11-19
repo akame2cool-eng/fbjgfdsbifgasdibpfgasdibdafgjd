@@ -6,7 +6,7 @@ from selenium.webdriver.chrome.options import Options
 import random
 import time
 import logging
-import re  # AGGIUNTO IMPORT MANCANTE
+import re
 from telegram import Update
 from telegram.ext import ContextTypes
 
@@ -56,11 +56,22 @@ class Shopify1CheckoutAutomation:
         """Chiude popup"""
         try:
             self.driver.execute_script("""
-                var popup = document.querySelector('#shopify-pc__banner');
-                if (popup) popup.remove();
+                // Rimuovi tutti i popup possibili
+                var popups = document.querySelectorAll('#shopify-pc__banner, .popup, .modal, [class*="popup"], [class*="modal"]');
+                popups.forEach(function(popup) {
+                    popup.remove();
+                });
+                
+                // Rimuovi overlay
+                var overlays = document.querySelectorAll('.overlay, [class*="overlay"]');
+                overlays.forEach(function(overlay) {
+                    overlay.remove();
+                });
             """)
+            print("✅ Popup rimossi")
             return True
-        except:
+        except Exception as e:
+            print(f"⚠️ Nessun popup: {e}")
             return False
 
     def generate_italian_info(self):
@@ -79,16 +90,47 @@ class Shopify1CheckoutAutomation:
     def add_to_cart(self):
         """Aggiunge prodotto al carrello"""
         try:
+            print("🛒 Aggiungo prodotto al carrello...")
             self.driver.get("https://earthesim.com/products/usa-esim?variant=42902995271773")
-            time.sleep(3)
+            time.sleep(4)
             
             self.close_popup()
+            time.sleep(1)
             
-            add_button = self.wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "button[type='submit']")))
+            # Prova diversi selettori per il bottone Add to Cart
+            add_button_selectors = [
+                "button[type='submit']",
+                "button[name='add']",
+                ".product-form__submit",
+                ".btn--add-to-cart",
+                "input[type='submit']",
+                "form[action='/cart/add'] button",
+                ".add-to-cart",
+                "[data-add-to-cart]"
+            ]
+            
+            add_button = None
+            for selector in add_button_selectors:
+                try:
+                    add_button = self.driver.find_element(By.CSS_SELECTOR, selector)
+                    if add_button.is_displayed() and add_button.is_enabled():
+                        print(f"✅ Trovato bottone: {selector}")
+                        break
+                    else:
+                        add_button = None
+                except:
+                    continue
+            
+            if not add_button:
+                print("❌ Bottone Add to Cart non trovato")
+                return False
+            
             self.driver.execute_script("arguments[0].click();", add_button)
-            time.sleep(2)
+            print("✅ Prodotto aggiunto al carrello")
             
+            time.sleep(3)
             return True
+            
         except Exception as e:
             print(f"❌ Errore aggiunta carrello: {e}")
             return False
@@ -96,14 +138,64 @@ class Shopify1CheckoutAutomation:
     def go_to_cart_and_checkout(self):
         """Va al carrello e checkout"""
         try:
+            print("🛒 Vado al carrello...")
             self.driver.get("https://earthesim.com/cart")
-            time.sleep(3)
+            time.sleep(4)
             
-            checkout_button = self.wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "button[name='checkout'], button#checkout")))
+            self.close_popup()
+            time.sleep(1)
+            
+            # PROVA TUTTI I POSSIBILI BOTTONI CHECKOUT
+            checkout_selectors = [
+                "button[name='checkout']",
+                "button#checkout",
+                "a[href*='checkout']",
+                "form[action*='checkout'] button",
+                "input[value*='Checkout']",
+                ".checkout-button",
+                ".btn--checkout",
+                "[class*='checkout'] button",
+                "a[href*='/checkout']",
+                ".cart__checkout"
+            ]
+            
+            checkout_button = None
+            for selector in checkout_selectors:
+                try:
+                    checkout_button = self.driver.find_element(By.CSS_SELECTOR, selector)
+                    if checkout_button.is_displayed() and checkout_button.is_enabled():
+                        print(f"✅ Trovato checkout: {selector}")
+                        print(f"   Testo: {checkout_button.text}")
+                        break
+                    else:
+                        checkout_button = None
+                except Exception as e:
+                    continue
+            
+            if not checkout_button:
+                print("❌ Nessun bottone checkout trovato")
+                # Prova a vedere se c'è un link checkout
+                try:
+                    checkout_links = self.driver.find_elements(By.CSS_SELECTOR, "a[href*='checkout']")
+                    for link in checkout_links:
+                        if link.is_displayed():
+                            print(f"✅ Trovato link checkout: {link.get_attribute('href')}")
+                            self.driver.get(link.get_attribute('href'))
+                            time.sleep(5)
+                            return True
+                except:
+                    pass
+                return False
+            
+            # Scroll e click
+            self.driver.execute_script("arguments[0].scrollIntoView(true);", checkout_button)
+            time.sleep(1)
             self.driver.execute_script("arguments[0].click();", checkout_button)
-            time.sleep(5)
+            print("✅ Checkout cliccato")
             
+            time.sleep(5)
             return True
+                
         except Exception as e:
             print(f"❌ Errore checkout: {e}")
             return False
@@ -111,42 +203,71 @@ class Shopify1CheckoutAutomation:
     def fill_shipping_info(self, info):
         """Compila informazioni spedizione"""
         try:
+            print("📦 Compilo informazioni spedizione...")
             time.sleep(3)
             
             # Email
-            email_field = self.wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "input#email")))
-            email_field.clear()
-            email_field.send_keys(info['email'])
+            try:
+                email_field = self.wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "input#email")))
+                email_field.clear()
+                email_field.send_keys(info['email'])
+                print("✅ Email compilata")
+            except:
+                print("❌ Email non trovata")
             
             # Nome
-            first_name_field = self.driver.find_element(By.CSS_SELECTOR, "input#TextField0")
-            first_name_field.clear()
-            first_name_field.send_keys(info['first_name'])
+            try:
+                first_name_field = self.driver.find_element(By.CSS_SELECTOR, "input#TextField0")
+                first_name_field.clear()
+                first_name_field.send_keys(info['first_name'])
+                print("✅ Nome compilato")
+            except:
+                print("❌ Nome non trovato")
             
             # Cognome
-            last_name_field = self.driver.find_element(By.CSS_SELECTOR, "input#TextField1")
-            last_name_field.clear()
-            last_name_field.send_keys(info['last_name'])
+            try:
+                last_name_field = self.driver.find_element(By.CSS_SELECTOR, "input#TextField1")
+                last_name_field.clear()
+                last_name_field.send_keys(info['last_name'])
+                print("✅ Cognome compilato")
+            except:
+                print("❌ Cognome non trovato")
             
             # Indirizzo
-            address_field = self.driver.find_element(By.CSS_SELECTOR, "input#billing-address1")
-            address_field.clear()
-            address_field.send_keys(info['address'])
+            try:
+                address_field = self.driver.find_element(By.CSS_SELECTOR, "input#billing-address1")
+                address_field.clear()
+                address_field.send_keys(info['address'])
+                print("✅ Indirizzo compilato")
+            except:
+                print("❌ Indirizzo non trovato")
             
             # Città
-            city_field = self.driver.find_element(By.CSS_SELECTOR, "input#TextField4")
-            city_field.clear()
-            city_field.send_keys(info['city'])
+            try:
+                city_field = self.driver.find_element(By.CSS_SELECTOR, "input#TextField4")
+                city_field.clear()
+                city_field.send_keys(info['city'])
+                print("✅ Città compilata")
+            except:
+                print("❌ Città non trovata")
             
             # CAP
-            postal_field = self.driver.find_element(By.CSS_SELECTOR, "input#TextField3")
-            postal_field.clear()
-            postal_field.send_keys(info['postal_code'])
+            try:
+                postal_field = self.driver.find_element(By.CSS_SELECTOR, "input#TextField3")
+                postal_field.clear()
+                postal_field.send_keys(info['postal_code'])
+                print("✅ CAP compilato")
+            except:
+                print("❌ CAP non trovato")
             
             # Telefono
-            phone_field = self.driver.find_element(By.CSS_SELECTOR, "input#TextField5")
-            phone_field.clear()
-            phone_field.send_keys(info['phone'])
+            try:
+                phone_field = self.driver.find_element(By.CSS_SELECTOR, "input#TextField5")
+                phone_field.clear()
+                phone_field.send_keys(info['phone'])
+                print("✅ Telefono compilato")
+            except:
+                print("❌ Telefono non trovato")
             
             time.sleep(2)
             return True
@@ -158,45 +279,69 @@ class Shopify1CheckoutAutomation:
     def fill_payment_info(self, info, card_data):
         """Compila informazioni pagamento"""
         try:
+            print("💳 Compilo informazioni pagamento...")
             time.sleep(2)
             
             # CARD NUMBER
-            card_iframe = self.driver.find_element(By.CSS_SELECTOR, "iframe[name*='card-fields-number']")
-            self.driver.switch_to.frame(card_iframe)
-            card_field = self.driver.find_element(By.CSS_SELECTOR, "input#number")
-            card_field.clear()
-            card_field.send_keys(card_data['number'])
-            self.driver.switch_to.default_content()
+            try:
+                card_iframe = self.driver.find_element(By.CSS_SELECTOR, "iframe[name*='card-fields-number']")
+                self.driver.switch_to.frame(card_iframe)
+                card_field = self.driver.find_element(By.CSS_SELECTOR, "input#number")
+                card_field.clear()
+                card_field.send_keys(card_data['number'])
+                self.driver.switch_to.default_content()
+                print("✅ Card number compilato")
+            except Exception as e:
+                print(f"❌ Card number errore: {e}")
+                self.driver.switch_to.default_content()
+            
             time.sleep(1)
             
             # EXPIRY DATE
-            expiry_iframe = self.driver.find_element(By.CSS_SELECTOR, "iframe[name*='card-fields-expiry']")
-            self.driver.switch_to.frame(expiry_iframe)
-            expiry_field = self.driver.find_element(By.CSS_SELECTOR, "input#expiry")
-            expiry_field.clear()
-            expiry_value = f"{card_data['month']}/{card_data['year']}"
-            expiry_field.send_keys(expiry_value)
-            self.driver.switch_to.default_content()
+            try:
+                expiry_iframe = self.driver.find_element(By.CSS_SELECTOR, "iframe[name*='card-fields-expiry']")
+                self.driver.switch_to.frame(expiry_iframe)
+                expiry_field = self.driver.find_element(By.CSS_SELECTOR, "input#expiry")
+                expiry_field.clear()
+                expiry_value = f"{card_data['month']}/{card_data['year']}"
+                expiry_field.send_keys(expiry_value)
+                self.driver.switch_to.default_content()
+                print("✅ Expiry compilato")
+            except Exception as e:
+                print(f"❌ Expiry errore: {e}")
+                self.driver.switch_to.default_content()
+            
             time.sleep(1)
             
             # CVV
-            cvv_iframe = self.driver.find_element(By.CSS_SELECTOR, "iframe[name*='card-fields-verification_value']")
-            self.driver.switch_to.frame(cvv_iframe)
-            cvv_field = self.driver.find_element(By.CSS_SELECTOR, "input#verification_value")
-            cvv_field.clear()
-            cvv_field.send_keys(card_data['cvv'])
-            self.driver.switch_to.default_content()
+            try:
+                cvv_iframe = self.driver.find_element(By.CSS_SELECTOR, "iframe[name*='card-fields-verification_value']")
+                self.driver.switch_to.frame(cvv_iframe)
+                cvv_field = self.driver.find_element(By.CSS_SELECTOR, "input#verification_value")
+                cvv_field.clear()
+                cvv_field.send_keys(card_data['cvv'])
+                self.driver.switch_to.default_content()
+                print("✅ CVV compilato")
+            except Exception as e:
+                print(f"❌ CVV errore: {e}")
+                self.driver.switch_to.default_content()
+            
             time.sleep(1)
             
             # NAME ON CARD
-            name_iframe = self.driver.find_element(By.CSS_SELECTOR, "iframe[name*='card-fields-name']")
-            self.driver.switch_to.frame(name_iframe)
-            name_field = self.driver.find_element(By.CSS_SELECTOR, "input#name")
-            name_field.clear()
-            name_field.send_keys(info['name_on_card'])
-            self.driver.switch_to.default_content()
-            time.sleep(2)
+            try:
+                name_iframe = self.driver.find_element(By.CSS_SELECTOR, "iframe[name*='card-fields-name']")
+                self.driver.switch_to.frame(name_iframe)
+                name_field = self.driver.find_element(By.CSS_SELECTOR, "input#name")
+                name_field.clear()
+                name_field.send_keys(info['name_on_card'])
+                self.driver.switch_to.default_content()
+                print("✅ Name on card compilato")
+            except Exception as e:
+                print(f"❌ Name on card errore: {e}")
+                self.driver.switch_to.default_content()
             
+            time.sleep(2)
             return True
             
         except Exception as e:
@@ -210,14 +355,39 @@ class Shopify1CheckoutAutomation:
     def complete_purchase(self):
         """Completa acquisto"""
         try:
+            print("🚀 Completo acquisto...")
             time.sleep(2)
             
-            pay_button = self.wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "button#checkout-pay-button")))
+            # Prova diversi selettori per il bottone Pay
+            pay_selectors = [
+                "button#checkout-pay-button",
+                "button[type='submit']",
+                "button[name='complete']",
+                ".btn--pay",
+                "[data-testid='pay-button']"
+            ]
+            
+            pay_button = None
+            for selector in pay_selectors:
+                try:
+                    pay_button = self.wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, selector)))
+                    if pay_button.is_displayed() and pay_button.is_enabled():
+                        print(f"✅ Trovato pay button: {selector}")
+                        break
+                    else:
+                        pay_button = None
+                except:
+                    continue
+            
+            if not pay_button:
+                print("❌ Pay button non trovato")
+                return False
+            
             self.driver.execute_script("arguments[0].click();", pay_button)
             print("✅ Pay Now cliccato")
             
             # Aspetta il risultato
-            time.sleep(8)
+            time.sleep(10)
             return True
                 
         except Exception as e:
@@ -226,7 +396,7 @@ class Shopify1CheckoutAutomation:
     
     def analyze_result(self):
         """Analizza risultato"""
-        print("🔍 ANALISI RISULTATO SHOPIFY...")
+        print("🔍 Analisi risultato Shopify...")
         
         try:
             current_url = self.driver.current_url
@@ -234,7 +404,7 @@ class Shopify1CheckoutAutomation:
             
             print(f"📄 URL: {current_url}")
             
-            # 1. PRIMA CONTROLLA URL DI SUCCESSO
+            # 1. CONTROLLA URL DI SUCCESSO
             if 'thank_you' in current_url or 'thank-you' in current_url or 'order' in current_url:
                 print("✅ SUCCESSO - URL di ringraziamento")
                 return "APPROVED"
@@ -257,29 +427,17 @@ class Shopify1CheckoutAutomation:
                     print(f"❌ DECLINED - Trovato: {keyword}")
                     return "DECLINED"
             
-            # 4. CONTROLLA ELEMENTI DI ERRORE VISIBILI
-            try:
-                error_elements = self.driver.find_elements(By.CSS_SELECTOR, ".field__message--error, .notice--error, .errors")
-                for element in error_elements:
-                    if element.is_displayed():
-                        error_text = element.text.lower()
-                        if any(word in error_text for word in ['declined', 'invalid', 'failed']):
-                            print(f"❌ DECLINED - Errore visibile: {error_text}")
-                            return "DECLINED"
-            except:
-                pass
-            
-            # 5. SE SIAMO ANCORA IN CHECKOUT, È FALLITO
+            # 4. SE SIAMO ANCORA IN CHECKOUT, È FALLITO
             if 'checkout' in current_url:
                 print("❌ DECLINED - Ancora in checkout")
                 return "DECLINED"
             
-            # 6. SE SIAMO SU UNA PAGINA DIVERSA DA CHECKOUT, È SUCCESSO
+            # 5. SE SIAMO SU UNA PAGINA DIVERSA DA CHECKOUT, È SUCCESSO
             if 'earthesim.com' in current_url and 'checkout' not in current_url:
                 print("✅ APPROVED - Pagina diversa da checkout")
                 return "APPROVED"
             
-            # 7. DEFAULT: DECLINED
+            # 6. DEFAULT: DECLINED
             print("❌ DECLINED - Nessun indicatore di successo trovato")
             return "DECLINED"
             
